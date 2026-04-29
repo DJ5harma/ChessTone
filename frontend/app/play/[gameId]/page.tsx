@@ -9,6 +9,9 @@ import { connectSocket, getSocket, joinGameRoom, leaveGameRoom } from "@/lib/soc
 import type { GameState, TerminationReason_I } from "@/lib/types";
 import { fenAfterAppliedMoves } from "@/lib/chessReplay";
 import { GameReplayBar } from "@/components/GameReplayBar";
+import { EvalBar } from "@/components/EvalBar";
+import { usePositionAnalysis } from "@/hooks/usePositionAnalysis";
+import { analysisSubtitle, uciToBestMoveArrow } from "@/lib/analysis/evalDisplay";
 import { cn } from "@/lib/utils";
 
 export default function GamePage() {
@@ -25,6 +28,7 @@ export default function GamePage() {
     const [localBlackMs, setLocalBlackMs] = useState(0);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [replayCursor, setReplayCursor] = useState(0);
+    const [analysisOn, setAnalysisOn] = useState(false);
 
     const loadGame = useCallback(async () => {
         try {
@@ -59,6 +63,14 @@ export default function GamePage() {
     useEffect(() => {
         void loadGame();
     }, [loadGame]);
+
+    useEffect(() => {
+        if (gameState?.status === "finished") {
+            setAnalysisOn(true);
+        } else if (gameState?.status === "active") {
+            setAnalysisOn(false);
+        }
+    }, [gameState?.status]);
 
     useEffect(() => {
         connectSocket();
@@ -162,6 +174,18 @@ export default function GamePage() {
         }
         return gameState.currentFen;
     }, [gameState, isGameOver, replayCursor]);
+
+    const analysisDepth = 14;
+    const { result: analysisResult, loading: analysisLoading, error: analysisError } =
+        usePositionAnalysis(boardFen, analysisOn && !!boardFen, analysisDepth);
+
+    const analysisArrows = useMemo(() => {
+        if (!analysisOn || !analysisResult?.bestMoveUci) {
+            return [] as { startSquare: string; endSquare: string; color: string }[];
+        }
+        const a = uciToBestMoveArrow(analysisResult.bestMoveUci);
+        return a ? [a] : [];
+    }, [analysisOn, analysisResult]);
 
     const handlePieceDrop = useCallback(
         async (
@@ -282,6 +306,25 @@ export default function GamePage() {
                 />
             )}
 
+            <div className="flex flex-wrap items-center gap-3">
+                <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-700">
+                    <input
+                        type="checkbox"
+                        className="size-4 rounded border-zinc-300"
+                        checked={analysisOn}
+                        onChange={(e) => setAnalysisOn(e.target.checked)}
+                    />
+                    Engine analysis (local Stockfish)
+                </label>
+                {analysisOn && (
+                    <span className="text-xs text-zinc-500">
+                        {analysisLoading
+                            ? "Analyzing…"
+                            : analysisError ?? analysisSubtitle(analysisResult)}
+                    </span>
+                )}
+            </div>
+
             <div className="grid gap-8 lg:grid-cols-[minmax(280px,420px)_1fr] lg:items-start">
                 <div className="mx-auto w-full max-w-[420px] space-y-4">
                     <ClockCard
@@ -291,22 +334,34 @@ export default function GamePage() {
                         active={gameState.sideToMove === "black" && !isGameOver}
                         highlight={myColor === "black"}
                     />
-                    <div className="overflow-hidden rounded-xl border border-zinc-200 bg-zinc-100 shadow-inner">
-                        <Chessboard
-                            options={{
-                                position: boardFen,
-                                boardOrientation: myColor,
-                                allowDragging: canMove,
-                                onPieceDrop: ({ piece, sourceSquare, targetSquare }) => {
-                                    void handlePieceDrop(
-                                        sourceSquare,
-                                        targetSquare,
-                                        piece.pieceType
-                                    );
-                                    return true;
-                                },
-                            }}
-                        />
+                    <div className="flex flex-row items-stretch justify-center gap-2">
+                        {analysisOn && (
+                            <EvalBar
+                                cp={analysisResult?.cp}
+                                mate={analysisResult?.mate}
+                                loading={analysisLoading}
+                                label={analysisSubtitle(analysisResult)}
+                            />
+                        )}
+                        <div className="min-w-0 flex-1 overflow-hidden rounded-xl border border-zinc-200 bg-zinc-100 shadow-inner">
+                            <Chessboard
+                                options={{
+                                    position: boardFen,
+                                    boardOrientation: myColor,
+                                    allowDragging: canMove,
+                                    arrows: analysisArrows,
+                                    clearArrowsOnPositionChange: false,
+                                    onPieceDrop: ({ piece, sourceSquare, targetSquare }) => {
+                                        void handlePieceDrop(
+                                            sourceSquare,
+                                            targetSquare,
+                                            piece.pieceType
+                                        );
+                                        return true;
+                                    },
+                                }}
+                            />
+                        </div>
                     </div>
                     <ClockCard
                         label="White"
