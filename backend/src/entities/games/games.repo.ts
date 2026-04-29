@@ -143,6 +143,32 @@ export class GamesRepo {
         return updated;
     }
 
+    async finishGameWithClocks(
+        gameId: string,
+        result: GameResult_I,
+        terminationReason: TerminationReason_I,
+        whiteClockMs: number,
+        blackClockMs: number
+    ) {
+        const [updated] = await db
+            .update(games)
+            .set({
+                status: "finished",
+                result,
+                terminationReason,
+                whiteClockMs: Math.max(0, whiteClockMs),
+                blackClockMs: Math.max(0, blackClockMs),
+                endedAt: new Date(),
+                updatedAt: new Date(),
+            })
+            .where(eq(games.id, gameId))
+            .returning();
+        if (!updated) {
+            throw new Error("Failed to finish game");
+        }
+        return updated;
+    }
+
     async applyMoveInTransaction(params: {
         gameId: string;
         move: {

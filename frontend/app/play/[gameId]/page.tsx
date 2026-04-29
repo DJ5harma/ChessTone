@@ -32,6 +32,7 @@ export default function GamePage() {
     const [analysisOn, setAnalysisOn] = useState(false);
     const clocksRef = useRef({ white: 0, black: 0 });
     const computerMoveGenRef = useRef(0);
+    const timeoutClaimInFlightRef = useRef(false);
 
     const loadGame = useCallback(async () => {
         try {
@@ -132,6 +133,44 @@ export default function GamePage() {
         return () => clearInterval(id);
     }, [gameState?.status, gameState?.sideToMove]);
 
+    /** Flag timeout when the side to move's clock hits 0 (PvP + vs computer). */
+    useEffect(() => {
+        if (!gameState || gameState.status !== "active" || !gameState.isParticipant) {
+            timeoutClaimInFlightRef.current = false;
+            return;
+        }
+        const side = gameState.sideToMove;
+        const activeMs = side === "white" ? localWhiteMs : localBlackMs;
+        if (activeMs > 0) {
+            timeoutClaimInFlightRef.current = false;
+            return;
+        }
+        if (timeoutClaimInFlightRef.current) {
+            return;
+        }
+        timeoutClaimInFlightRef.current = true;
+        void (async () => {
+            try {
+                await Api.post(`/games/${gameId}/timeout`, {
+                    whiteClockMs: localWhiteMs,
+                    blackClockMs: localBlackMs,
+                });
+                await loadGame();
+            } catch {
+                timeoutClaimInFlightRef.current = false;
+                await loadGame();
+            }
+        })();
+    }, [
+        gameState?.status,
+        gameState?.isParticipant,
+        gameState?.sideToMove,
+        localWhiteMs,
+        localBlackMs,
+        gameId,
+        loadGame,
+    ]);
+
     useEffect(() => {
         if (!gameState || gameState.status !== "finished") {
             return;
@@ -212,6 +251,12 @@ export default function GamePage() {
             return;
         }
 
+        const stm = gameState.sideToMove;
+        const moverClock = stm === "white" ? localWhiteMs : localBlackMs;
+        if (moverClock <= 0) {
+            return;
+        }
+
         const id = ++computerMoveGenRef.current;
         let cancelled = false;
 
@@ -255,6 +300,8 @@ export default function GamePage() {
         gameState?.currentFen,
         gameState?.isParticipant,
         myColor,
+        localWhiteMs,
+        localBlackMs,
         gameId,
         loadGame,
     ]);

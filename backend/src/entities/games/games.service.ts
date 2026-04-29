@@ -377,6 +377,75 @@ export class GamesService {
         };
     }
 
+    async claimTimeout(gameId: string, userId: string, whiteClockMs: number, blackClockMs: number) {
+        const game = await GamesRepoImpl.findById(gameId);
+        if (!game) {
+            throw new AppError({ statusCode: 404, message: "Game not found" });
+        }
+
+        if (game.status !== "active") {
+            throw new AppError({ statusCode: 400, message: "Game is not active" });
+        }
+
+        const participants = await GamesRepoImpl.getParticipants(gameId);
+        if (!participants.some((p) => p.userId === userId)) {
+            throw new AppError({ statusCode: 403, message: "Not a player in this game" });
+        }
+
+        const stm = game.sideToMove;
+        const moverClockMs = stm === "white" ? whiteClockMs : blackClockMs;
+        if (moverClockMs > 0) {
+            throw new AppError({
+                statusCode: 400,
+                message: "Clock still has time — cannot flag timeout yet",
+            });
+        }
+
+        const result: GameResult_I = stm === "white" ? "black_win" : "white_win";
+
+        const updatedGame = await GamesRepoImpl.finishGameWithClocks(
+            gameId,
+            result,
+            "timeout",
+            whiteClockMs,
+            blackClockMs
+        );
+
+        if (game.rated) {
+            const deltas = await RatingsServiceImpl.updateRatingAfterGame(
+                participants.find((p) => p.color === "white")!.userId,
+                participants.find((p) => p.color === "black")!.userId,
+                game.timeClass,
+                gameId,
+                result
+            );
+            await GamesRepoImpl.updateParticipantRating(
+                gameId,
+                "white",
+                deltas.white.ratingAfter,
+                deltas.white.ratingDelta
+            );
+            await GamesRepoImpl.updateParticipantRating(
+                gameId,
+                "black",
+                deltas.black.ratingAfter,
+                deltas.black.ratingDelta
+            );
+        }
+
+        emitGameRoom(gameId, "gameEnded", {
+            result: updatedGame.result,
+            terminationReason: updatedGame.terminationReason,
+        });
+        await this.broadcastGameState(gameId);
+
+        return {
+            gameId: updatedGame.id,
+            result: updatedGame.result,
+            terminationReason: updatedGame.terminationReason,
+        };
+    }
+
     async offerDraw(gameId: string, userId: string) {
         const game = await GamesRepoImpl.findById(gameId);
         if (!game) {

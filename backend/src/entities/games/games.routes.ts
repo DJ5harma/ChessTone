@@ -9,6 +9,7 @@ gamesRouter.post("/", authenticate, GamesControllerImpl.createGame);
 gamesRouter.get("/history", authenticate, GamesControllerImpl.getHistory);
 gamesRouter.get("/:gameId", authenticate, GamesControllerImpl.getGame);
 gamesRouter.post("/:gameId/move", authenticate, GamesControllerImpl.makeMove);
+gamesRouter.post("/:gameId/timeout", authenticate, GamesControllerImpl.claimTimeout);
 gamesRouter.post("/:gameId/resign", authenticate, GamesControllerImpl.resign);
 gamesRouter.post("/:gameId/draw/offer", authenticate, GamesControllerImpl.offerDraw);
 gamesRouter.post("/:gameId/draw/accept", authenticate, GamesControllerImpl.acceptDraw);

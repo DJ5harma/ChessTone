@@ -81,6 +81,25 @@ export class GamesController {
         }
     }
 
+    async claimTimeout(req: AuthRequest, res: Response, next: NextFunction) {
+        try {
+            const gameId = req.params.gameId as string;
+            const { whiteClockMs, blackClockMs } = req.body as {
+                whiteClockMs?: number;
+                blackClockMs?: number;
+            };
+            const result = await GamesServiceImpl.claimTimeout(
+                gameId,
+                req.user!.userId,
+                Number(whiteClockMs ?? 0),
+                Number(blackClockMs ?? 0)
+            );
+            res.json(result);
+        } catch (err) {
+            next(err);
+        }
+    }
+
     async offerDraw(req: AuthRequest, res: Response, next: NextFunction) {
         try {
             const gameId = req.params.gameId as string;
