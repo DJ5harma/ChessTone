@@ -8,7 +8,7 @@ import React, {
     useMemo,
     useState,
 } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthWrapper";
 import { Api } from "@/lib/api";
 import { connectSocket, getSocket } from "@/lib/socket";
@@ -42,6 +42,7 @@ function mergeById(prev: ChallengeListItem[], next: ChallengeListItem): Challeng
 export function ChallengeInboxProvider({ children }: { children: React.ReactNode }) {
     const { user } = useAuth();
     const router = useRouter();
+    const pathname = usePathname();
     const [challenges, setChallenges] = useState<ChallengeListItem[]>([]);
 
     const refresh = useCallback(async () => {
@@ -82,7 +83,11 @@ export function ChallengeInboxProvider({ children }: { children: React.ReactNode
 
         const onAccepted = (payload: { challengeId: string; gameId: string }) => {
             removeById(payload.challengeId);
-            router.push(`/play/${payload.gameId}`);
+            const next = `/play/${payload.gameId}`;
+            if (pathname === next) {
+                return;
+            }
+            router.push(next);
         };
 
         socket.on("challengeReceived", onReceived);
@@ -96,7 +101,7 @@ export function ChallengeInboxProvider({ children }: { children: React.ReactNode
             socket.off("challengeDeclined", onDeclined);
             socket.off("challengeAccepted", onAccepted);
         };
-    }, [router]);
+    }, [router, pathname]);
 
     const accept = useCallback(
         async (challengeId: string) => {

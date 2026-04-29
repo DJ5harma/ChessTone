@@ -1,6 +1,6 @@
 import { db } from "../../db/client.ts";
 import { users, userRatings, userPresence } from "../../db/schema.ts";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import type { User, UserRating, UserPresence } from "../../db/schema.ts";
 
 export class UsersRepo {
@@ -11,6 +11,14 @@ export class UsersRepo {
             .where(eq(users.id, userId))
             .limit(1);
         return user || null;
+    }
+
+    async findByIds(ids: string[]): Promise<User[]> {
+        const uniq = [...new Set(ids)].filter(Boolean);
+        if (uniq.length === 0) {
+            return [];
+        }
+        return db.select().from(users).where(inArray(users.id, uniq));
     }
 
     async findByUsername(username: string) {

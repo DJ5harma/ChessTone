@@ -2,6 +2,7 @@ import { Chess } from "chess.js";
 import type { Square } from "chess.js";
 import { GamesRepoImpl } from "./games.repo.ts";
 import { RatingsServiceImpl } from "../ratings/ratings.service.ts";
+import { UsersRepoImpl } from "../users/users.repo.ts";
 import { AppError } from "../../shared/errors/AppError.ts";
 import { emitGameRoom } from "../../realtime/events.ts";
 import type { TimeClass_I, ChessColor_I, GameResult_I, TerminationReason_I } from "../../shared/types/index.ts";
@@ -25,6 +26,19 @@ function parseFenClocks(fen: string): { halfmoveClock: number; fullmoveNumber: n
     const halfmoveClock = Number.parseInt(parts[4] ?? "0", 10) || 0;
     const fullmoveNumber = Number.parseInt(parts[5] ?? "1", 10) || 1;
     return { halfmoveClock, fullmoveNumber };
+}
+
+function historyParticipantNames(
+    userId: string,
+    userRow: { username: string; displayName: string | null } | undefined
+): { username: string | null; displayName: string | null } {
+    if (userId === STOCKFISH_BOT_USER_ID) {
+        return { username: "Stockfish", displayName: "Stockfish" };
+    }
+    if (!userRow) {
+        return { username: null, displayName: null };
+    }
+    return { username: userRow.username, displayName: userRow.displayName };
 }
 
 export class GamesService {
@@ -434,31 +448,64 @@ export class GamesService {
     async getGameHistory(userId: string, limit?: number, offset?: number) {
         const gamesList = await GamesRepoImpl.getGameHistory(userId, limit, offset);
 
+        const participantRows = await Promise.all(
+            gamesList.map((g) => GamesRepoImpl.getParticipants(g.id))
+        );
+
+        const allUserIds = new Set<string>();
+        for (const parts of participantRows) {
+            for (const p of parts) {
+                allUserIds.add(p.userId);
+            }
+        }
+
+        const userRows = await UsersRepoImpl.findByIds([...allUserIds]);
+        const byId = new Map(userRows.map((u) => [u.id, u]));
+
         const gamesWithParticipants = await Promise.all(
-            gamesList.map(async (g) => {
-                const parts = await GamesRepoImpl.getParticipants(g.id);
+            gamesList.map(async (g, i) => {
+                const parts = participantRows[i]!;
                 const white = parts.find((p) => p.color === "white");
                 const black = parts.find((p) => p.color === "black");
+                const wu = white?.userId;
+                const bu = black?.userId;
+                const wNames = wu
+                    ? historyParticipantNames(wu, byId.get(wu))
+                    : { username: null, displayName: null };
+                const bNames = bu
+                    ? historyParticipantNames(bu, byId.get(bu))
+                    : { username: null, displayName: null };
+                const moveCount = await GamesRepoImpl.countMovesForGame(g.id);
 
                 return {
                     id: g.id,
+                    vsComputer: g.vsComputer,
                     timeClass: g.timeClass,
                     rated: g.rated,
+                    initialSeconds: g.initialSeconds,
+                    incrementSeconds: g.incrementSeconds,
+                    delaySeconds: g.delaySeconds,
                     result: g.result,
                     terminationReason: g.terminationReason,
-                    endedAt: g.endedAt,
+                    startedAt: g.startedAt ? g.startedAt.toISOString() : null,
+                    endedAt: g.endedAt ? g.endedAt.toISOString() : null,
+                    moveCount,
                     participants: {
                         white: {
-                            userId: white?.userId,
-                            ratingBefore: white?.ratingBefore,
-                            ratingAfter: white?.ratingAfter,
-                            ratingDelta: white?.ratingDelta,
+                            userId: wu ?? "",
+                            username: wNames.username,
+                            displayName: wNames.displayName,
+                            ratingBefore: white?.ratingBefore ?? null,
+                            ratingAfter: white?.ratingAfter ?? null,
+                            ratingDelta: white?.ratingDelta ?? null,
                         },
                         black: {
-                            userId: black?.userId,
-                            ratingBefore: black?.ratingBefore,
-                            ratingAfter: black?.ratingAfter,
-                            ratingDelta: black?.ratingDelta,
+                            userId: bu ?? "",
+                            username: bNames.username,
+                            displayName: bNames.displayName,
+                            ratingBefore: black?.ratingBefore ?? null,
+                            ratingAfter: black?.ratingAfter ?? null,
+                            ratingDelta: black?.ratingDelta ?? null,
                         },
                     },
                 };

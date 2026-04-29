@@ -1,6 +1,6 @@
 import { db } from "../../db/client.ts";
 import { games, gameParticipants, gameMoves } from "../../db/schema.ts";
-import { eq, desc, and, ilike } from "drizzle-orm";
+import { eq, desc, and, ilike, count } from "drizzle-orm";
 import type { Game, GameParticipant, GameMove } from "../../db/schema.ts";
 import type { TimeClass_I, ChessColor_I, GameResult_I, TerminationReason_I } from "../../shared/types/index.ts";
 
@@ -93,6 +93,14 @@ export class GamesRepo {
             .from(gameMoves)
             .where(eq(gameMoves.gameId, gameId))
             .orderBy(gameMoves.plyIndex);
+    }
+
+    async countMovesForGame(gameId: string): Promise<number> {
+        const [row] = await db
+            .select({ n: count() })
+            .from(gameMoves)
+            .where(eq(gameMoves.gameId, gameId));
+        return Number(row?.n ?? 0);
     }
 
     async updateGameState(

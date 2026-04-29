@@ -89,20 +89,31 @@ export interface GameState {
 
 export interface GameHistoryEntry {
     id: string;
+    vsComputer?: boolean;
     timeClass: TimeClass_I;
     rated: boolean;
+    /** Clock in seconds (initial main time). */
+    initialSeconds: number;
+    incrementSeconds: number;
+    delaySeconds: number;
     result: GameResult_I;
     terminationReason: TerminationReason_I | null;
+    startedAt: string | null;
     endedAt: string | null;
+    moveCount: number;
     participants: {
         white: {
             userId: string;
+            username: string | null;
+            displayName: string | null;
             ratingBefore: number | null;
             ratingAfter: number | null;
             ratingDelta: number | null;
         };
         black: {
             userId: string;
+            username: string | null;
+            displayName: string | null;
             ratingBefore: number | null;
             ratingAfter: number | null;
             ratingDelta: number | null;

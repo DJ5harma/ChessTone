@@ -166,10 +166,15 @@ export class MatchmakingService {
             challengeId: challenge.id,
         });
 
-        emitUserRoom(challenge.challengerId, "challengeAccepted", {
+        const acceptedPayload = {
             challengeId: challenge.id,
             gameId: game.id,
-        });
+        };
+
+        // Notify both players — previously only the challenger was emitted to, so they often
+        // never navigated (socket timing / reconnect). Opponent already redirects via HTTP from accept().
+        emitUserRoom(challenge.challengerId, "challengeAccepted", acceptedPayload);
+        emitUserRoom(challenge.opponentId, "challengeAccepted", acceptedPayload);
 
         return { game, challenge };
     }
