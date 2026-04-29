@@ -170,6 +170,10 @@ export const games = pgTable("games", {
     clockReferenceAt: timestamp("clock_reference_at", { withTimezone: true, mode: "date" })
         .notNull()
         .default(sql`now()`),
+    /** Player who offered a draw; cleared when the offer is accepted or any move is played. */
+    drawOfferedByUserId: uuid("draw_offered_by_user_id").references(() => users.id, {
+        onDelete: "set null",
+    }),
     halfmoveClock: integer("halfmove_clock").notNull().default(0),
     fullmoveNumber: integer("fullmove_number").notNull().default(1),
     result: gameResultEnum("result").notNull().default("none"),

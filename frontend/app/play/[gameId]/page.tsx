@@ -379,12 +379,21 @@ export default function GamePage() {
     };
 
     const handleOfferDraw = async () => {
-        await Api.post(`/games/${gameId}/draw/offer`, {});
+        try {
+            await Api.post(`/games/${gameId}/draw/offer`, {});
+            await loadGame();
+        } catch {
+            await loadGame();
+        }
     };
 
     const handleAcceptDraw = async () => {
-        await Api.post(`/games/${gameId}/draw/accept`, {});
-        await loadGame();
+        try {
+            await Api.post(`/games/${gameId}/draw/accept`, {});
+            await loadGame();
+        } catch {
+            await loadGame();
+        }
     };
 
     if (isLoading) {
@@ -405,6 +414,10 @@ export default function GamePage() {
 
     const showingReplay = isGameOver && maxReplay > 0;
     const isVsComputer = gameState.vsComputer === true;
+    const drawFrom = gameState.drawOfferedByUserId ?? null;
+    const canOfferDraw = isMyTurn && !isGameOver && !drawFrom;
+    const canAcceptDraw =
+        !!drawFrom && !!user?.userId && drawFrom !== user.userId && !isGameOver;
 
     return (
         <div className="space-y-8">
@@ -416,13 +429,21 @@ export default function GamePage() {
                 >
                     ← Lobby
                 </button>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex w-full min-w-0 flex-col items-end gap-2 sm:w-auto sm:items-stretch">
+                    {!isVsComputer && !isGameOver && drawFrom && user?.userId && (
+                        <p className="max-w-md text-right text-sm text-amber-900">
+                            {drawFrom === user.userId
+                                ? "You offered a draw. Making a move withdraws the offer."
+                                : "Your opponent offered a draw — accept below, or play on."}
+                        </p>
+                    )}
+                    <div className="flex flex-wrap justify-end gap-2">
                     {!isVsComputer && (
                         <>
                             <button
                                 type="button"
                                 onClick={() => void handleOfferDraw()}
-                                disabled={!!isGameOver}
+                                disabled={!canOfferDraw}
                                 className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-950 disabled:opacity-40"
                             >
                                 Offer draw
@@ -430,7 +451,7 @@ export default function GamePage() {
                             <button
                                 type="button"
                                 onClick={() => void handleAcceptDraw()}
-                                disabled={!!isGameOver}
+                                disabled={!canAcceptDraw}
                                 className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm disabled:opacity-40"
                             >
                                 Accept draw
@@ -445,6 +466,7 @@ export default function GamePage() {
                     >
                         Resign
                     </button>
+                    </div>
                 </div>
             </div>
 

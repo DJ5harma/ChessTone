@@ -172,6 +172,7 @@ export class GamesService {
             sideToMove: game.sideToMove,
             whiteClockMs: live.whiteClockMs,
             blackClockMs: live.blackClockMs,
+            drawOfferedByUserId: game.drawOfferedByUserId ?? null,
             result: game.result,
             terminationReason: game.terminationReason,
             participants: {
@@ -496,7 +497,26 @@ export class GamesService {
             throw new AppError({ statusCode: 400, message: "Game is not active" });
         }
 
+        if (game.vsComputer) {
+            throw new AppError({
+                statusCode: 400,
+                message: "Draw offers are not available in computer games",
+            });
+        }
+
+        const participants = await GamesRepoImpl.getParticipants(gameId);
+        const userParticipant = participants.find((p) => p.userId === userId);
+        if (!userParticipant) {
+            throw new AppError({ statusCode: 403, message: "Not a player in this game" });
+        }
+
+        if (userParticipant.color !== game.sideToMove) {
+            throw new AppError({ statusCode: 400, message: "You can only offer a draw on your turn" });
+        }
+
+        await GamesRepoImpl.setDrawOffer(gameId, userId);
         emitGameRoom(gameId, "drawOffer", { fromUserId: userId, gameId });
+        await this.broadcastGameState(gameId);
         return { message: "Draw offer sent", gameId };
     }
 
@@ -508,6 +528,21 @@ export class GamesService {
 
         if (game.status !== "active") {
             throw new AppError({ statusCode: 400, message: "Game is not active" });
+        }
+
+        if (game.vsComputer) {
+            throw new AppError({
+                statusCode: 400,
+                message: "Cannot accept a draw in computer games",
+            });
+        }
+
+        if (!game.drawOfferedByUserId) {
+            throw new AppError({ statusCode: 400, message: "No draw offer to accept" });
+        }
+
+        if (game.drawOfferedByUserId === userId) {
+            throw new AppError({ statusCode: 400, message: "You cannot accept your own draw offer" });
         }
 
         const participants = await GamesRepoImpl.getParticipants(gameId);

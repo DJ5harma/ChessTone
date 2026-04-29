@@ -60,6 +60,8 @@ export interface GameState {
     sideToMove: ChessColor_I;
     whiteClockMs: number;
     blackClockMs: number;
+    /** User id of the player who offered a draw; only the opponent may accept. */
+    drawOfferedByUserId?: string | null;
     result: GameResult_I;
     terminationReason: TerminationReason_I | null;
     participants: {

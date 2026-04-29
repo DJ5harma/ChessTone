@@ -105,6 +105,21 @@ export class GamesRepo {
         return Number(row?.n ?? 0);
     }
 
+    async setDrawOffer(gameId: string, fromUserId: string | null) {
+        const [updated] = await db
+            .update(games)
+            .set({
+                drawOfferedByUserId: fromUserId,
+                updatedAt: new Date(),
+            })
+            .where(eq(games.id, gameId))
+            .returning();
+        if (!updated) {
+            throw new Error("Failed to update draw offer");
+        }
+        return updated;
+    }
+
     async updateGameState(
         gameId: string,
         data: {
@@ -231,6 +246,7 @@ export class GamesRepo {
                         clockReferenceAt,
                         halfmoveClock: params.nextGameState.halfmoveClock,
                         fullmoveNumber: params.nextGameState.fullmoveNumber,
+                        drawOfferedByUserId: null,
                         endedAt: new Date(),
                         updatedAt: new Date(),
                     })
@@ -252,6 +268,7 @@ export class GamesRepo {
                     clockReferenceAt,
                     halfmoveClock: params.nextGameState.halfmoveClock,
                     fullmoveNumber: params.nextGameState.fullmoveNumber,
+                    drawOfferedByUserId: null,
                     updatedAt: new Date(),
                 })
                 .where(eq(games.id, params.gameId))
