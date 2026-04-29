@@ -15,6 +15,13 @@
       "when": 1777489508771,
       "tag": "0001_vs_computer",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1777492509754,
+      "tag": "0002_gray_vertigo",
+      "breakpoints": true
     }
   ]
 }

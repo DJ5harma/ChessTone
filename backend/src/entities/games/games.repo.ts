@@ -21,6 +21,7 @@ export class GamesRepo {
         const result = await db.transaction(async (tx) => {
             const startingFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
             const initialClockMs = data.initialSeconds * 1000;
+            const startedAt = new Date();
 
             const [game] = await tx
                 .insert(games)
@@ -37,10 +38,11 @@ export class GamesRepo {
                     sideToMove: "white",
                     whiteClockMs: initialClockMs,
                     blackClockMs: initialClockMs,
+                    clockReferenceAt: startedAt,
                     halfmoveClock: 0,
                     fullmoveNumber: 1,
                     result: "none",
-                    startedAt: new Date(),
+                    startedAt,
                 })
                 .returning();
 
@@ -213,6 +215,8 @@ export class GamesRepo {
                 throw new Error("Failed to add move");
             }
 
+            const clockReferenceAt = new Date();
+
             if (params.finish) {
                 const [updated] = await tx
                     .update(games)
@@ -224,6 +228,7 @@ export class GamesRepo {
                         sideToMove: params.nextGameState.sideToMove,
                         whiteClockMs: params.nextGameState.whiteClockMs,
                         blackClockMs: params.nextGameState.blackClockMs,
+                        clockReferenceAt,
                         halfmoveClock: params.nextGameState.halfmoveClock,
                         fullmoveNumber: params.nextGameState.fullmoveNumber,
                         endedAt: new Date(),
@@ -244,6 +249,7 @@ export class GamesRepo {
                     sideToMove: params.nextGameState.sideToMove,
                     whiteClockMs: params.nextGameState.whiteClockMs,
                     blackClockMs: params.nextGameState.blackClockMs,
+                    clockReferenceAt,
                     halfmoveClock: params.nextGameState.halfmoveClock,
                     fullmoveNumber: params.nextGameState.fullmoveNumber,
                     updatedAt: new Date(),

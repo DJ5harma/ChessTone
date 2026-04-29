@@ -166,6 +166,10 @@ export const games = pgTable("games", {
     sideToMove: chessColorEnum("side_to_move").notNull().default("white"),
     whiteClockMs: integer("white_clock_ms").notNull().default(0),
     blackClockMs: integer("black_clock_ms").notNull().default(0),
+    /** Wall time when stored clocks became valid for the current thinking period (PvP live clock). */
+    clockReferenceAt: timestamp("clock_reference_at", { withTimezone: true, mode: "date" })
+        .notNull()
+        .default(sql`now()`),
     halfmoveClock: integer("halfmove_clock").notNull().default(0),
     fullmoveNumber: integer("fullmove_number").notNull().default(1),
     result: gameResultEnum("result").notNull().default("none"),

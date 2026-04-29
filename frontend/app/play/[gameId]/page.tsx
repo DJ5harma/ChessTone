@@ -15,6 +15,19 @@ import { analysisSubtitle, uciToBestMoveArrow } from "@/lib/analysis/evalDisplay
 import { cn } from "@/lib/utils";
 import { StockfishBrowser } from "@/lib/analysis/stockfishBrowser";
 
+/** vs-computer games use a full pool on every move so the server never applies time. */
+function clocksForMovePayload(
+    gs: GameState,
+    whiteMs: number,
+    blackMs: number
+): { whiteClockMs: number; blackClockMs: number } {
+    if (gs.vsComputer) {
+        const pool = gs.initialSeconds * 1000;
+        return { whiteClockMs: pool, blackClockMs: pool };
+    }
+    return { whiteClockMs: whiteMs, blackClockMs: blackMs };
+}
+
 export default function GamePage() {
     const params = useParams();
     const router = useRouter();
@@ -33,12 +46,14 @@ export default function GamePage() {
     const clocksRef = useRef({ white: 0, black: 0 });
     const computerMoveGenRef = useRef(0);
     const timeoutClaimInFlightRef = useRef(false);
+    const vsComputerRef = useRef(false);
 
     const loadGame = useCallback(async () => {
         try {
             setError(null);
             const state = await Api.get<GameState>(`/games/${gameId}`);
             setGameState(state);
+            vsComputerRef.current = state.vsComputer === true;
             setLocalWhiteMs(state.whiteClockMs);
             setLocalBlackMs(state.blackClockMs);
 
@@ -86,6 +101,7 @@ export default function GamePage() {
         const socket = getSocket();
         const onState = (state: GameState) => {
             setGameState(state);
+            vsComputerRef.current = state.vsComputer === true;
             setLocalWhiteMs(state.whiteClockMs);
             setLocalBlackMs(state.blackClockMs);
             if (state.status === "finished") {
@@ -118,8 +134,20 @@ export default function GamePage() {
         };
     }, [gameId]);
 
+    /** Resync clocks from server when returning to an online PvP game (authoritative time). */
     useEffect(() => {
-        if (gameState?.status !== "active") {
+        const onVis = () => {
+            if (document.visibilityState !== "visible" || vsComputerRef.current) {
+                return;
+            }
+            void loadGame();
+        };
+        document.addEventListener("visibilitychange", onVis);
+        return () => document.removeEventListener("visibilitychange", onVis);
+    }, [loadGame]);
+
+    useEffect(() => {
+        if (gameState?.status !== "active" || gameState.vsComputer) {
             return;
         }
         const side = gameState.sideToMove;
@@ -131,11 +159,16 @@ export default function GamePage() {
             }
         }, 1000);
         return () => clearInterval(id);
-    }, [gameState?.status, gameState?.sideToMove]);
+    }, [gameState?.status, gameState?.sideToMove, gameState?.vsComputer]);
 
-    /** Flag timeout when the side to move's clock hits 0 (PvP + vs computer). */
+    /** Flag timeout when the side to move's clock hits 0 (online games only). */
     useEffect(() => {
-        if (!gameState || gameState.status !== "active" || !gameState.isParticipant) {
+        if (
+            !gameState ||
+            gameState.status !== "active" ||
+            !gameState.isParticipant ||
+            gameState.vsComputer
+        ) {
             timeoutClaimInFlightRef.current = false;
             return;
         }
@@ -164,6 +197,7 @@ export default function GamePage() {
     }, [
         gameState?.status,
         gameState?.isParticipant,
+        gameState?.vsComputer,
         gameState?.sideToMove,
         localWhiteMs,
         localBlackMs,
@@ -251,12 +285,6 @@ export default function GamePage() {
             return;
         }
 
-        const stm = gameState.sideToMove;
-        const moverClock = stm === "white" ? localWhiteMs : localBlackMs;
-        if (moverClock <= 0) {
-            return;
-        }
-
         const id = ++computerMoveGenRef.current;
         let cancelled = false;
 
@@ -270,10 +298,11 @@ export default function GamePage() {
                 if (!analysis.bestMoveUci) {
                     return;
                 }
+                const ck = clocksForMovePayload(gameState, clocksRef.current.white, clocksRef.current.black);
                 await Api.post(`/games/${gameId}/move`, {
                     uci: analysis.bestMoveUci,
-                    whiteClockMs: clocksRef.current.white,
-                    blackClockMs: clocksRef.current.black,
+                    whiteClockMs: ck.whiteClockMs,
+                    blackClockMs: ck.blackClockMs,
                 });
                 if (cancelled || id !== computerMoveGenRef.current) {
                     return;
@@ -300,8 +329,6 @@ export default function GamePage() {
         gameState?.currentFen,
         gameState?.isParticipant,
         myColor,
-        localWhiteMs,
-        localBlackMs,
         gameId,
         loadGame,
     ]);
@@ -324,15 +351,14 @@ export default function GamePage() {
                 uci += "q";
             }
 
-            const whiteClockMs = localWhiteMs;
-            const blackClockMs = localBlackMs;
+            const ck = clocksForMovePayload(gameState, localWhiteMs, localBlackMs);
 
             setIsSubmitting(true);
             try {
                 await Api.post(`/games/${gameId}/move`, {
                     uci,
-                    whiteClockMs,
-                    blackClockMs,
+                    whiteClockMs: ck.whiteClockMs,
+                    blackClockMs: ck.blackClockMs,
                 });
                 await loadGame();
             } catch {
@@ -454,6 +480,7 @@ export default function GamePage() {
                     <ClockCard
                         label={isVsComputer ? (myColor === "black" ? "You" : "Stockfish") : "Black"}
                         ms={blackDisplay}
+                        unlimited={isVsComputer}
                         rating={
                             isVsComputer && myColor === "white"
                                 ? null
@@ -494,6 +521,7 @@ export default function GamePage() {
                     <ClockCard
                         label={isVsComputer ? (myColor === "white" ? "You" : "Stockfish") : "White"}
                         ms={whiteDisplay}
+                        unlimited={isVsComputer}
                         rating={
                             isVsComputer && myColor === "black"
                                 ? null
@@ -539,6 +567,7 @@ export default function GamePage() {
 function ClockCard(props: {
     label: string;
     ms: number;
+    unlimited?: boolean;
     rating: number | null;
     active: boolean;
     highlight: boolean;
@@ -555,7 +584,16 @@ function ClockCard(props: {
                 <div className="text-xs font-medium uppercase text-zinc-500">{props.label}</div>
                 <div className="text-sm text-zinc-700">{props.rating ?? "—"} rating</div>
             </div>
-            <div className="font-mono text-2xl tabular-nums text-zinc-900">{formatTime(props.ms)}</div>
+            <div className="text-right">
+                <div className="font-mono text-2xl tabular-nums text-zinc-900">
+                    {props.unlimited ? "∞" : formatTime(props.ms)}
+                </div>
+                {props.unlimited && (
+                    <div className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">
+                        No clock
+                    </div>
+                )}
+            </div>
         </div>
     );
 }

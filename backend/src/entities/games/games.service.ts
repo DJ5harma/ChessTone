@@ -6,6 +6,7 @@ import { UsersRepoImpl } from "../users/users.repo.ts";
 import { AppError } from "../../shared/errors/AppError.ts";
 import { emitGameRoom } from "../../realtime/events.ts";
 import type { TimeClass_I, ChessColor_I, GameResult_I, TerminationReason_I } from "../../shared/types/index.ts";
+import type { Game } from "../../db/schema.ts";
 import { STOCKFISH_BOT_USER_ID } from "../../shared/config/botUser.ts";
 
 function applyUciOrSan(chess: Chess, uci: string) {
@@ -41,6 +42,36 @@ function historyParticipantNames(
     return { username: userRow.username, displayName: userRow.displayName };
 }
 
+/** Elapsed wall time since `clockReferenceAt` only reduces the side-to-move clock (PvP). */
+export function liveClocksForGame(
+    game: Pick<
+        Game,
+        | "status"
+        | "vsComputer"
+        | "sideToMove"
+        | "whiteClockMs"
+        | "blackClockMs"
+        | "clockReferenceAt"
+        | "startedAt"
+    >,
+    nowMs: number = Date.now()
+): { whiteClockMs: number; blackClockMs: number } {
+    const w = Math.max(0, game.whiteClockMs);
+    const b = Math.max(0, game.blackClockMs);
+
+    if (game.status !== "active" || game.vsComputer) {
+        return { whiteClockMs: w, blackClockMs: b };
+    }
+
+    const refMs = game.clockReferenceAt?.getTime() ?? game.startedAt?.getTime() ?? nowMs;
+    const elapsed = Math.max(0, nowMs - refMs);
+
+    if (game.sideToMove === "white") {
+        return { whiteClockMs: Math.max(0, w - elapsed), blackClockMs: b };
+    }
+    return { whiteClockMs: w, blackClockMs: Math.max(0, b - elapsed) };
+}
+
 export class GamesService {
     async createGame(params: {
         rated: boolean;
@@ -63,6 +94,8 @@ export class GamesService {
             blackRating: blackRating.rating,
         });
 
+        const liveCreate = liveClocksForGame(game);
+
         return {
             id: game.id,
             status: game.status,
@@ -74,8 +107,8 @@ export class GamesService {
             delaySeconds: game.delaySeconds,
             currentFen: game.currentFen,
             sideToMove: game.sideToMove,
-            whiteClockMs: game.whiteClockMs,
-            blackClockMs: game.blackClockMs,
+            whiteClockMs: liveCreate.whiteClockMs,
+            blackClockMs: liveCreate.blackClockMs,
             participants: {
                 white: { userId: whiteParticipant.userId, ratingBefore: whiteParticipant.ratingBefore },
                 black: { userId: blackParticipant.userId, ratingBefore: blackParticipant.ratingBefore },
@@ -123,6 +156,8 @@ export class GamesService {
 
         const isParticipant = participants.some((p) => p.userId === userId);
 
+        const live = liveClocksForGame(game);
+
         return {
             id: game.id,
             status: game.status,
@@ -135,8 +170,8 @@ export class GamesService {
             startingFen: game.startingFen,
             currentFen: game.currentFen,
             sideToMove: game.sideToMove,
-            whiteClockMs: game.whiteClockMs,
-            blackClockMs: game.blackClockMs,
+            whiteClockMs: live.whiteClockMs,
+            blackClockMs: live.blackClockMs,
             result: game.result,
             terminationReason: game.terminationReason,
             participants: {
@@ -377,7 +412,7 @@ export class GamesService {
         };
     }
 
-    async claimTimeout(gameId: string, userId: string, whiteClockMs: number, blackClockMs: number) {
+    async claimTimeout(gameId: string, userId: string, _whiteClockMs: number, _blackClockMs: number) {
         const game = await GamesRepoImpl.findById(gameId);
         if (!game) {
             throw new AppError({ statusCode: 404, message: "Game not found" });
@@ -387,13 +422,18 @@ export class GamesService {
             throw new AppError({ statusCode: 400, message: "Game is not active" });
         }
 
+        if (game.vsComputer) {
+            throw new AppError({ statusCode: 400, message: "Computer games have no clock" });
+        }
+
         const participants = await GamesRepoImpl.getParticipants(gameId);
         if (!participants.some((p) => p.userId === userId)) {
             throw new AppError({ statusCode: 403, message: "Not a player in this game" });
         }
 
+        const live = liveClocksForGame(game);
         const stm = game.sideToMove;
-        const moverClockMs = stm === "white" ? whiteClockMs : blackClockMs;
+        const moverClockMs = stm === "white" ? live.whiteClockMs : live.blackClockMs;
         if (moverClockMs > 0) {
             throw new AppError({
                 statusCode: 400,
@@ -407,8 +447,8 @@ export class GamesService {
             gameId,
             result,
             "timeout",
-            whiteClockMs,
-            blackClockMs
+            live.whiteClockMs,
+            live.blackClockMs
         );
 
         if (game.rated) {
