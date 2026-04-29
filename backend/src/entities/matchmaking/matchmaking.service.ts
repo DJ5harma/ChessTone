@@ -119,6 +119,23 @@ export class MatchmakingService {
             ...params,
         });
 
+        const challengerUser = await UsersRepoImpl.findById(challengerId);
+        emitUserRoom(opponentId, "challengeReceived", {
+            challenge: {
+                id: challenge.id,
+                challengerId: challenge.challengerId,
+                opponentId: challenge.opponentId,
+                challengerUsername: challengerUser?.username ?? null,
+                rated: challenge.rated,
+                timeClass: challenge.timeClass,
+                initialSeconds: challenge.initialSeconds,
+                incrementSeconds: challenge.incrementSeconds,
+                delaySeconds: challenge.delaySeconds,
+                createdAt: challenge.createdAt,
+                isIncoming: true,
+            },
+        });
+
         return challenge;
     }
 
@@ -149,6 +166,11 @@ export class MatchmakingService {
             challengeId: challenge.id,
         });
 
+        emitUserRoom(challenge.challengerId, "challengeAccepted", {
+            challengeId: challenge.id,
+            gameId: game.id,
+        });
+
         return { game, challenge };
     }
 
@@ -168,6 +190,10 @@ export class MatchmakingService {
 
         await ChallengesRepoImpl.declineChallenge(challengeId);
 
+        const otherUserId =
+            challenge.challengerId === userId ? challenge.opponentId : challenge.challengerId;
+        emitUserRoom(otherUserId, "challengeDeclined", { challengeId });
+
         return { success: true };
     }
 
@@ -183,23 +209,38 @@ export class MatchmakingService {
 
         await ChallengesRepoImpl.withdrawChallenge(challengeId);
 
+        emitUserRoom(challenge.opponentId, "challengeWithdrawn", { challengeId });
+
         return { success: true };
     }
 
     async getPendingChallenges(userId: string) {
         const challenges = await ChallengesRepoImpl.getPendingForUser(userId);
 
-        return challenges.map((c) => ({
-            id: c.id,
-            challengerId: c.challengerId,
-            opponentId: c.opponentId,
-            rated: c.rated,
-            timeClass: c.timeClass,
-            initialSeconds: c.initialSeconds,
-            incrementSeconds: c.incrementSeconds,
-            createdAt: c.createdAt,
-            isIncoming: c.opponentId === userId,
-        }));
+        const enriched = await Promise.all(
+            challenges.map(async (c) => {
+                const [challengerUser, opponentUser] = await Promise.all([
+                    UsersRepoImpl.findById(c.challengerId),
+                    UsersRepoImpl.findById(c.opponentId),
+                ]);
+                return {
+                    id: c.id,
+                    challengerId: c.challengerId,
+                    opponentId: c.opponentId,
+                    challengerUsername: challengerUser?.username ?? null,
+                    opponentUsername: opponentUser?.username ?? null,
+                    rated: c.rated,
+                    timeClass: c.timeClass,
+                    initialSeconds: c.initialSeconds,
+                    incrementSeconds: c.incrementSeconds,
+                    delaySeconds: c.delaySeconds,
+                    createdAt: c.createdAt,
+                    isIncoming: c.opponentId === userId,
+                };
+            })
+        );
+
+        return enriched;
     }
 }
 

@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Chessboard } from "react-chessboard";
 import { useAuth } from "@/contexts/AuthWrapper";
 import { Api } from "@/lib/api";
 import { connectSocket, getSocket, joinGameRoom, leaveGameRoom } from "@/lib/socket";
 import type { GameState, TerminationReason_I } from "@/lib/types";
+import { fenAfterAppliedMoves } from "@/lib/chessReplay";
+import { GameReplayBar } from "@/components/GameReplayBar";
 import { cn } from "@/lib/utils";
 
 export default function GamePage() {
@@ -22,6 +24,7 @@ export default function GamePage() {
     const [localWhiteMs, setLocalWhiteMs] = useState(0);
     const [localBlackMs, setLocalBlackMs] = useState(0);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [replayCursor, setReplayCursor] = useState(0);
 
     const loadGame = useCallback(async () => {
         try {
@@ -38,6 +41,12 @@ export default function GamePage() {
                 setMyColor("white");
             } else if (currentUserId === blackId) {
                 setMyColor("black");
+            }
+
+            if (state.status === "finished") {
+                setReplayCursor(state.moves.length);
+            } else {
+                setReplayCursor(0);
             }
         } catch {
             setError("Could not load this game.");
@@ -59,8 +68,16 @@ export default function GamePage() {
             setGameState(state);
             setLocalWhiteMs(state.whiteClockMs);
             setLocalBlackMs(state.blackClockMs);
+            if (state.status === "finished") {
+                setReplayCursor(state.moves.length);
+            } else {
+                setReplayCursor(0);
+            }
         };
-        const onEnd = (payload: { result: GameState["result"]; terminationReason: TerminationReason_I | null }) => {
+        const onEnd = (payload: {
+            result: GameState["result"];
+            terminationReason: TerminationReason_I | null;
+        }) => {
             setGameState((prev) =>
                 prev
                     ? {
@@ -96,10 +113,55 @@ export default function GamePage() {
         return () => clearInterval(id);
     }, [gameState?.status, gameState?.sideToMove]);
 
-    const isMyTurn = gameState?.sideToMove === myColor;
+    useEffect(() => {
+        if (!gameState || gameState.status !== "finished") {
+            return;
+        }
+        const max = gameState.moves.length;
+        setReplayCursor((c) => Math.min(c, max));
+    }, [gameState?.status, gameState?.moves.length]);
+
     const isGameOver = gameState?.status === "finished";
+    const maxReplay = gameState?.moves.length ?? 0;
+
+    useEffect(() => {
+        if (!isGameOver || !gameState) {
+            return;
+        }
+        const onKey = (e: KeyboardEvent) => {
+            const t = e.target as HTMLElement | null;
+            if (t?.closest?.("input, textarea, select, [contenteditable=true]")) {
+                return;
+            }
+            if (e.key === "ArrowLeft") {
+                e.preventDefault();
+                setReplayCursor((c) => Math.max(0, c - 1));
+            } else if (e.key === "ArrowRight") {
+                e.preventDefault();
+                setReplayCursor((c) => Math.min(maxReplay, c + 1));
+            }
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [isGameOver, gameState, maxReplay]);
+
+    const isMyTurn = gameState?.sideToMove === myColor;
     const canMove =
         gameState?.isParticipant === true && !isGameOver && isMyTurn && !isSubmitting;
+
+    const boardFen = useMemo(() => {
+        if (!gameState) {
+            return "";
+        }
+        if (isGameOver) {
+            return fenAfterAppliedMoves(
+                gameState.moves,
+                replayCursor,
+                gameState.startingFen
+            );
+        }
+        return gameState.currentFen;
+    }, [gameState, isGameOver, replayCursor]);
 
     const handlePieceDrop = useCallback(
         async (
@@ -172,6 +234,8 @@ export default function GamePage() {
         );
     }
 
+    const showingReplay = isGameOver && maxReplay > 0;
+
     return (
         <div className="space-y-8">
             <div className="flex flex-wrap items-center justify-between gap-4">
@@ -210,6 +274,14 @@ export default function GamePage() {
                 </div>
             </div>
 
+            {showingReplay && (
+                <GameReplayBar
+                    cursor={replayCursor}
+                    max={maxReplay}
+                    onCursorChange={setReplayCursor}
+                />
+            )}
+
             <div className="grid gap-8 lg:grid-cols-[minmax(280px,420px)_1fr] lg:items-start">
                 <div className="mx-auto w-full max-w-[420px] space-y-4">
                     <ClockCard
@@ -222,7 +294,7 @@ export default function GamePage() {
                     <div className="overflow-hidden rounded-xl border border-zinc-200 bg-zinc-100 shadow-inner">
                         <Chessboard
                             options={{
-                                position: gameState.currentFen,
+                                position: boardFen,
                                 boardOrientation: myColor,
                                 allowDragging: canMove,
                                 onPieceDrop: ({ piece, sourceSquare, targetSquare }) => {
@@ -250,7 +322,12 @@ export default function GamePage() {
                         <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
                             Moves
                         </h2>
-                        <MoveList moves={gameState.moves} />
+                        <ReplayMoveList
+                            moves={gameState.moves}
+                            replayCursor={isGameOver ? replayCursor : gameState.moves.length}
+                            interactive={isGameOver && maxReplay > 0}
+                            onGoTo={(applied) => setReplayCursor(applied)}
+                        />
                     </div>
 
                     {isGameOver && (
@@ -296,32 +373,75 @@ function ClockCard(props: {
     );
 }
 
-function MoveList({
+function ReplayMoveList({
     moves,
+    replayCursor,
+    interactive,
+    onGoTo,
 }: {
     moves: GameState["moves"];
+    replayCursor: number;
+    interactive: boolean;
+    onGoTo: (appliedCount: number) => void;
 }) {
-    const rows: { num: number; white?: string; black?: string }[] = [];
-    for (let i = 0; i < moves.length; i += 2) {
-        const whiteMove = moves[i];
-        const blackMove = moves[i + 1];
-        if (whiteMove?.color === "white") {
-            rows.push({
-                num: whiteMove.moveNumber,
-                white: whiteMove.san,
-                black: blackMove?.color === "black" ? blackMove.san : undefined,
-            });
+    const rows: {
+        num: number;
+        white?: { san: string; halfIdx: number };
+        black?: { san: string; halfIdx: number };
+    }[] = [];
+
+    for (let i = 0; i < moves.length; i++) {
+        const w = moves[i];
+        if (!w || w.color !== "white") {
+            continue;
+        }
+        const b = moves[i + 1]?.color === "black" ? moves[i + 1] : undefined;
+        rows.push({
+            num: w.moveNumber,
+            white: { san: w.san, halfIdx: i },
+            black: b ? { san: b.san, halfIdx: i + 1 } : undefined,
+        });
+        if (b) {
+            i++;
         }
     }
 
+    const activeHalfIdx = replayCursor > 0 ? replayCursor - 1 : -1;
+
     return (
         <div className="mt-3 max-h-72 overflow-y-auto font-mono text-sm">
-            <div className="grid grid-cols-[2rem_1fr_1fr] gap-x-2 gap-y-1">
-                {rows.map((p) => (
-                    <div key={`${p.num}-${p.white ?? ""}-${p.black ?? ""}`} className="contents">
-                        <span className="text-zinc-400">{p.num}.</span>
-                        <span>{p.white ?? ""}</span>
-                        <span>{p.black ?? ""}</span>
+            <div className="flex flex-col gap-1">
+                {rows.map((row) => (
+                    <div key={row.num} className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                        <span className="w-7 shrink-0 text-zinc-400">{row.num}.</span>
+                        {row.white && (
+                            <button
+                                type="button"
+                                disabled={!interactive}
+                                onClick={() => onGoTo(row.white!.halfIdx + 1)}
+                                className={cn(
+                                    "min-w-[2.75rem] rounded px-1.5 py-0.5 text-left",
+                                    interactive && "hover:bg-zinc-100",
+                                    activeHalfIdx === row.white!.halfIdx && "bg-amber-100 font-semibold text-zinc-900"
+                                )}
+                            >
+                                {row.white.san}
+                            </button>
+                        )}
+                        {row.black && (
+                            <button
+                                type="button"
+                                disabled={!interactive}
+                                onClick={() => onGoTo(row.black!.halfIdx + 1)}
+                                className={cn(
+                                    "min-w-[2.75rem] rounded px-1.5 py-0.5 text-left",
+                                    interactive && "hover:bg-zinc-100",
+                                    activeHalfIdx === row.black!.halfIdx && "bg-amber-100 font-semibold text-zinc-900"
+                                )}
+                            >
+                                {row.black.san}
+                            </button>
+                        )}
                     </div>
                 ))}
             </div>

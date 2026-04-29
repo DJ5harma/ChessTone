@@ -87,6 +87,7 @@ export class GamesService {
             initialSeconds: game.initialSeconds,
             incrementSeconds: game.incrementSeconds,
             delaySeconds: game.delaySeconds,
+            startingFen: game.startingFen,
             currentFen: game.currentFen,
             sideToMove: game.sideToMove,
             whiteClockMs: game.whiteClockMs,

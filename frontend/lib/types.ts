@@ -53,6 +53,7 @@ export interface GameState {
     initialSeconds: number;
     incrementSeconds: number;
     delaySeconds: number;
+    startingFen?: string;
     currentFen: string;
     sideToMove: ChessColor_I;
     whiteClockMs: number;
@@ -119,6 +120,8 @@ export interface Challenge {
     id: string;
     challengerId: string;
     opponentId: string;
+    challengerUsername?: string | null;
+    opponentUsername?: string | null;
     rated: boolean;
     timeClass: TimeClass_I;
     initialSeconds: number;
@@ -127,3 +130,5 @@ export interface Challenge {
     createdAt: string;
     isIncoming: boolean;
 }
+
+export type ChallengeListItem = Challenge;

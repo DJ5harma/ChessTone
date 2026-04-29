@@ -6,6 +6,7 @@ import { Api } from "@/lib/api";
 import { connectSocket, disconnectSocket } from "@/lib/socket";
 import type { AuthResponse, UserProfile } from "@/lib/types";
 import { AppShell } from "@/components/AppShell";
+import { ChallengeInboxProvider } from "@/contexts/ChallengeInboxContext";
 
 interface AuthContextType {
     user: { userId: string; username: string } | null;
@@ -97,7 +98,9 @@ export function AuthWrapper({ children }: { children: React.ReactNode }) {
 
     return (
         <AuthContext.Provider value={{ user, isLoading: false, login, register, logout }}>
-            <AppShell>{children}</AppShell>
+            <ChallengeInboxProvider>
+                <AppShell>{children}</AppShell>
+            </ChallengeInboxProvider>
         </AuthContext.Provider>
     );
 }

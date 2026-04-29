@@ -3,11 +3,13 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Api } from "@/lib/api";
+import { useChallengeInbox } from "@/contexts/ChallengeInboxContext";
 
 type SearchHit = { id: string; username: string; displayName: string | null };
 
 export default function ChallengePage() {
     const router = useRouter();
+    const { refresh } = useChallengeInbox();
     const [query, setQuery] = useState("");
     const [hits, setHits] = useState<SearchHit[]>([]);
     const [selected, setSelected] = useState<SearchHit | null>(null);
@@ -47,6 +49,7 @@ export default function ChallengePage() {
                 incrementSeconds: tcInc(timeClass),
                 delaySeconds: 0,
             });
+            await refresh();
             router.push("/play");
         } catch (e) {
             setError(e instanceof Error ? e.message : "Could not create challenge.");

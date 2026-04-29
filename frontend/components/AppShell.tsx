@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/AuthWrapper";
 import { cn } from "@/lib/utils";
+import { ChallengeInboxBell } from "@/components/ChallengeInboxBell";
 
 const nav = [
     { href: "/play", label: "Play" },
@@ -52,7 +53,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                             Profile
                         </Link>
                     </nav>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2">
+                        <ChallengeInboxBell />
                         <span className="hidden max-w-[12rem] truncate text-sm text-zinc-500 sm:inline">
                             {user.username}
                         </span>
