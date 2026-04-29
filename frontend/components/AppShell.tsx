@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/AuthWrapper";
 import { cn } from "@/lib/utils";
 import { ChallengeInboxBell } from "@/components/ChallengeInboxBell";
+import Image from "next/image";
 
 const nav = [
     { href: "/play", label: "Play" },
@@ -23,8 +24,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="flex min-h-full flex-col bg-zinc-50 text-zinc-900">
             <header className="sticky top-0 z-40 border-b border-zinc-200/80 bg-white/90 backdrop-blur-md">
                 <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-4 px-4">
-                    <Link href="/play" className="font-semibold tracking-tight text-zinc-900">
-                        ChessTone
+                    <Link href="/play" className="font-semibold tracking-tight text-zinc-900 flex gap-2 items-center">
+                        <Image src="/logo.svg" alt="ChessTone" width={100} height={100} className="
+                        h-10 w-10 z-20 relative" />
+                        <span className="text-xl font-bold">ChessTone</span>
                     </Link>
                     <nav className="flex flex-1 items-center justify-center gap-1 sm:gap-2">
                         {nav.map((item) => (
