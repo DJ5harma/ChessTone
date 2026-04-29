@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Chessboard } from "react-chessboard";
 import { useAuth } from "@/contexts/AuthWrapper";
@@ -13,6 +13,7 @@ import { EvalBar } from "@/components/EvalBar";
 import { usePositionAnalysis } from "@/hooks/usePositionAnalysis";
 import { analysisSubtitle, uciToBestMoveArrow } from "@/lib/analysis/evalDisplay";
 import { cn } from "@/lib/utils";
+import { StockfishBrowser } from "@/lib/analysis/stockfishBrowser";
 
 export default function GamePage() {
     const params = useParams();
@@ -29,6 +30,8 @@ export default function GamePage() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [replayCursor, setReplayCursor] = useState(0);
     const [analysisOn, setAnalysisOn] = useState(false);
+    const clocksRef = useRef({ white: 0, black: 0 });
+    const computerMoveGenRef = useRef(0);
 
     const loadGame = useCallback(async () => {
         try {
@@ -71,6 +74,10 @@ export default function GamePage() {
             setAnalysisOn(false);
         }
     }, [gameState?.status]);
+
+    useEffect(() => {
+        clocksRef.current = { white: localWhiteMs, black: localBlackMs };
+    }, [localWhiteMs, localBlackMs]);
 
     useEffect(() => {
         connectSocket();
@@ -175,9 +182,19 @@ export default function GamePage() {
         return gameState.currentFen;
     }, [gameState, isGameOver, replayCursor]);
 
+    const isComputerTurn = useMemo(
+        () =>
+            gameState != null &&
+            gameState.isParticipant &&
+            gameState.vsComputer === true &&
+            gameState.status === "active" &&
+            gameState.sideToMove !== myColor,
+        [gameState, myColor]
+    );
+
     const analysisDepth = 14;
     const { result: analysisResult, loading: analysisLoading, error: analysisError } =
-        usePositionAnalysis(boardFen, analysisOn && !!boardFen, analysisDepth);
+        usePositionAnalysis(boardFen, analysisOn && !!boardFen && !isComputerTurn, analysisDepth);
 
     const analysisArrows = useMemo(() => {
         if (!analysisOn || !analysisResult?.bestMoveUci) {
@@ -186,6 +203,61 @@ export default function GamePage() {
         const a = uciToBestMoveArrow(analysisResult.bestMoveUci);
         return a ? [a] : [];
     }, [analysisOn, analysisResult]);
+
+    useEffect(() => {
+        if (!gameState?.vsComputer || gameState.status !== "active" || !gameState.isParticipant) {
+            return;
+        }
+        if (gameState.sideToMove === myColor) {
+            return;
+        }
+
+        const id = ++computerMoveGenRef.current;
+        let cancelled = false;
+
+        void (async () => {
+            setIsSubmitting(true);
+            try {
+                const analysis = await StockfishBrowser.analyze(gameState.currentFen, 14);
+                if (cancelled || id !== computerMoveGenRef.current) {
+                    return;
+                }
+                if (!analysis.bestMoveUci) {
+                    return;
+                }
+                await Api.post(`/games/${gameId}/move`, {
+                    uci: analysis.bestMoveUci,
+                    whiteClockMs: clocksRef.current.white,
+                    blackClockMs: clocksRef.current.black,
+                });
+                if (cancelled || id !== computerMoveGenRef.current) {
+                    return;
+                }
+                await loadGame();
+            } catch {
+                if (!cancelled && id === computerMoveGenRef.current) {
+                    await loadGame();
+                }
+            } finally {
+                if (id === computerMoveGenRef.current) {
+                    setIsSubmitting(false);
+                }
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [
+        gameState?.vsComputer,
+        gameState?.status,
+        gameState?.sideToMove,
+        gameState?.currentFen,
+        gameState?.isParticipant,
+        myColor,
+        gameId,
+        loadGame,
+    ]);
 
     const handlePieceDrop = useCallback(
         async (
@@ -259,6 +331,7 @@ export default function GamePage() {
     }
 
     const showingReplay = isGameOver && maxReplay > 0;
+    const isVsComputer = gameState.vsComputer === true;
 
     return (
         <div className="space-y-8">
@@ -271,22 +344,26 @@ export default function GamePage() {
                     ← Lobby
                 </button>
                 <div className="flex flex-wrap gap-2">
-                    <button
-                        type="button"
-                        onClick={() => void handleOfferDraw()}
-                        disabled={!!isGameOver}
-                        className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-950 disabled:opacity-40"
-                    >
-                        Offer draw
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => void handleAcceptDraw()}
-                        disabled={!!isGameOver}
-                        className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm disabled:opacity-40"
-                    >
-                        Accept draw
-                    </button>
+                    {!isVsComputer && (
+                        <>
+                            <button
+                                type="button"
+                                onClick={() => void handleOfferDraw()}
+                                disabled={!!isGameOver}
+                                className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-950 disabled:opacity-40"
+                            >
+                                Offer draw
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => void handleAcceptDraw()}
+                                disabled={!!isGameOver}
+                                className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm disabled:opacity-40"
+                            >
+                                Accept draw
+                            </button>
+                        </>
+                    )}
                     <button
                         type="button"
                         onClick={() => void handleResign()}
@@ -328,9 +405,13 @@ export default function GamePage() {
             <div className="grid gap-8 lg:grid-cols-[minmax(280px,420px)_1fr] lg:items-start">
                 <div className="mx-auto w-full max-w-[420px] space-y-4">
                     <ClockCard
-                        label="Black"
+                        label={isVsComputer ? (myColor === "black" ? "You" : "Stockfish") : "Black"}
                         ms={blackDisplay}
-                        rating={gameState.participants.black.ratingBefore}
+                        rating={
+                            isVsComputer && myColor === "white"
+                                ? null
+                                : gameState.participants.black.ratingBefore
+                        }
                         active={gameState.sideToMove === "black" && !isGameOver}
                         highlight={myColor === "black"}
                     />
@@ -364,9 +445,13 @@ export default function GamePage() {
                         </div>
                     </div>
                     <ClockCard
-                        label="White"
+                        label={isVsComputer ? (myColor === "white" ? "You" : "Stockfish") : "White"}
                         ms={whiteDisplay}
-                        rating={gameState.participants.white.ratingBefore}
+                        rating={
+                            isVsComputer && myColor === "black"
+                                ? null
+                                : gameState.participants.white.ratingBefore
+                        }
                         active={gameState.sideToMove === "white" && !isGameOver}
                         highlight={myColor === "white"}
                     />

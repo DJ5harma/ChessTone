@@ -7,6 +7,7 @@ import type { TimeClass_I, ChessColor_I, GameResult_I, TerminationReason_I } fro
 export class GamesRepo {
     async create(data: {
         rated: boolean;
+        vsComputer?: boolean;
         timeClass: TimeClass_I;
         initialSeconds: number;
         incrementSeconds: number;
@@ -26,6 +27,7 @@ export class GamesRepo {
                 .values({
                     challengeId: data.challengeId,
                     rated: data.rated,
+                    vsComputer: data.vsComputer ?? false,
                     timeClass: data.timeClass,
                     initialSeconds: data.initialSeconds,
                     incrementSeconds: data.incrementSeconds,

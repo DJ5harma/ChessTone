@@ -5,6 +5,7 @@ import { RatingsServiceImpl } from "../ratings/ratings.service.ts";
 import { AppError } from "../../shared/errors/AppError.ts";
 import { emitGameRoom } from "../../realtime/events.ts";
 import type { TimeClass_I, ChessColor_I, GameResult_I, TerminationReason_I } from "../../shared/types/index.ts";
+import { STOCKFISH_BOT_USER_ID } from "../../shared/config/botUser.ts";
 
 function applyUciOrSan(chess: Chess, uci: string) {
     const clean = uci.trim();
@@ -29,6 +30,7 @@ function parseFenClocks(fen: string): { halfmoveClock: number; fullmoveNumber: n
 export class GamesService {
     async createGame(params: {
         rated: boolean;
+        vsComputer?: boolean;
         timeClass: TimeClass_I;
         initialSeconds: number;
         incrementSeconds: number;
@@ -42,6 +44,7 @@ export class GamesService {
 
         const { game, whiteParticipant, blackParticipant } = await GamesRepoImpl.create({
             ...params,
+            vsComputer: params.vsComputer ?? false,
             whiteRating: whiteRating.rating,
             blackRating: blackRating.rating,
         });
@@ -50,6 +53,7 @@ export class GamesService {
             id: game.id,
             status: game.status,
             rated: game.rated,
+            vsComputer: game.vsComputer,
             timeClass: game.timeClass,
             initialSeconds: game.initialSeconds,
             incrementSeconds: game.incrementSeconds,
@@ -63,6 +67,32 @@ export class GamesService {
                 black: { userId: blackParticipant.userId, ratingBefore: blackParticipant.ratingBefore },
             },
         };
+    }
+
+    async createComputerGame(
+        userId: string,
+        params: {
+            playAs: ChessColor_I;
+            timeClass: TimeClass_I;
+            initialSeconds: number;
+            incrementSeconds: number;
+            delaySeconds: number;
+        }
+    ) {
+        const humanWhite = params.playAs === "white";
+        const whiteUserId = humanWhite ? userId : STOCKFISH_BOT_USER_ID;
+        const blackUserId = humanWhite ? STOCKFISH_BOT_USER_ID : userId;
+
+        return this.createGame({
+            rated: false,
+            vsComputer: true,
+            timeClass: params.timeClass,
+            initialSeconds: params.initialSeconds,
+            incrementSeconds: params.incrementSeconds,
+            delaySeconds: params.delaySeconds,
+            whiteUserId,
+            blackUserId,
+        });
     }
 
     async getGame(gameId: string, userId: string) {
@@ -83,6 +113,7 @@ export class GamesService {
             id: game.id,
             status: game.status,
             rated: game.rated,
+            vsComputer: game.vsComputer,
             timeClass: game.timeClass,
             initialSeconds: game.initialSeconds,
             incrementSeconds: game.incrementSeconds,
@@ -147,8 +178,14 @@ export class GamesService {
             throw new AppError({ statusCode: 403, message: "Not a player in this game" });
         }
 
+        const participantToMove = participants.find((p) => p.color === game.sideToMove);
+        const isEngineToMove =
+            game.vsComputer && participantToMove?.userId === STOCKFISH_BOT_USER_ID;
+
         if (userParticipant.color !== game.sideToMove) {
-            throw new AppError({ statusCode: 400, message: "Not your turn" });
+            if (!isEngineToMove) {
+                throw new AppError({ statusCode: 400, message: "Not your turn" });
+            }
         }
 
         const existingMoves = await GamesRepoImpl.getMoves(gameId);
@@ -200,7 +237,7 @@ export class GamesService {
         const movePayload = {
             plyIndex,
             moveNumber,
-            color: userParticipant.color,
+            color: game.sideToMove,
             uci: cleanUciFromMove(move),
             san: move.san,
             fenBefore: game.currentFen,

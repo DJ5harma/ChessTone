@@ -49,6 +49,8 @@ export interface GameState {
     id: string;
     status: GameStatus_I;
     rated: boolean;
+    /** Human vs local engine (optional for older API responses). */
+    vsComputer?: boolean;
     timeClass: TimeClass_I;
     initialSeconds: number;
     incrementSeconds: number;

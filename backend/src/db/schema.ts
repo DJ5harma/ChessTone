@@ -155,6 +155,8 @@ export const games = pgTable("games", {
         }),
     status: gameStatusEnum("status").notNull().default("active"),
     rated: boolean("rated").notNull().default(true),
+    /** Human vs local engine — human may POST moves for the engine's turn. */
+    vsComputer: boolean("vs_computer").notNull().default(false),
     timeClass: timeClassEnum("time_class").notNull(),
     initialSeconds: integer("initial_seconds").notNull(),
     incrementSeconds: integer("increment_seconds").notNull().default(0),

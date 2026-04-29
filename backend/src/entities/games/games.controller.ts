@@ -4,6 +4,24 @@ import type { AuthRequest } from "../auth/auth.middleware.ts";
 import type { TimeClass_I } from "../../shared/types/index.ts";
 
 export class GamesController {
+    async createComputerGame(req: AuthRequest, res: Response, next: NextFunction) {
+        try {
+            const { playAs, timeClass, initialSeconds, incrementSeconds, delaySeconds } = req.body;
+
+            const game = await GamesServiceImpl.createComputerGame(req.user!.userId, {
+                playAs: playAs as "white" | "black",
+                timeClass: timeClass as TimeClass_I,
+                initialSeconds: Number(initialSeconds),
+                incrementSeconds: Number(incrementSeconds),
+                delaySeconds: Number(delaySeconds ?? 0),
+            });
+
+            res.status(201).json(game);
+        } catch (err) {
+            next(err);
+        }
+    }
+
     async createGame(req: AuthRequest, res: Response, next: NextFunction) {
         try {
             const { rated, timeClass, initialSeconds, incrementSeconds, delaySeconds, whiteUserId, blackUserId } = req.body;

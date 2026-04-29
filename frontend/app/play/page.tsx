@@ -23,6 +23,17 @@ export default function PlayPage() {
         router.push("/queue");
     };
 
+    const handleVsComputer = async (timeClass: string, playAs: "white" | "black") => {
+        const game = await Api.post<{ id: string }>("/games/computer", {
+            playAs,
+            timeClass,
+            initialSeconds: getInitialSeconds(timeClass),
+            incrementSeconds: getIncrement(timeClass),
+            delaySeconds: 0,
+        });
+        router.push(`/play/${game.id}`);
+    };
+
     return (
         <div className="space-y-10">
             <div>
@@ -64,6 +75,47 @@ export default function PlayPage() {
                                     className="flex-1 rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm font-medium text-zinc-800 shadow-sm hover:bg-zinc-50 sm:flex-none"
                                 >
                                     Casual
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </section>
+
+            <section className="rounded-xl border border-sky-200 bg-sky-50/80 p-6 shadow-sm">
+                <h2 className="text-lg font-semibold text-sky-950">Play vs computer</h2>
+                <p className="mt-1 text-sm text-sky-900/80">
+                    Casual games — Stockfish runs in your browser and submits moves as you watch.
+                </p>
+                <div className="mt-6 space-y-4">
+                    {[
+                        { name: "Bullet", timeClass: "bullet", label: "1+0" },
+                        { name: "Blitz", timeClass: "blitz", label: "3+2" },
+                        { name: "Rapid", timeClass: "rapid", label: "10+5" },
+                        { name: "Classical", timeClass: "classical", label: "30+30" },
+                    ].map((tc) => (
+                        <div
+                            key={`cpu-${tc.timeClass}`}
+                            className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+                        >
+                            <div className="text-sm font-medium text-sky-950">
+                                {tc.name}{" "}
+                                <span className="font-normal text-sky-800/90">({tc.label})</span>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => void handleVsComputer(tc.timeClass, "white")}
+                                    className="rounded-lg bg-sky-900 px-4 py-2.5 text-sm font-medium text-white shadow hover:bg-sky-800"
+                                >
+                                    White
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => void handleVsComputer(tc.timeClass, "black")}
+                                    className="rounded-lg border border-sky-400 bg-white px-4 py-2.5 text-sm font-medium text-sky-950 shadow-sm hover:bg-sky-100/80"
+                                >
+                                    Black
                                 </button>
                             </div>
                         </div>

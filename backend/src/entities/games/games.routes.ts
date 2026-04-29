@@ -4,6 +4,7 @@ import { authenticate } from "../auth/auth.middleware.ts";
 
 const gamesRouter = Router();
 
+gamesRouter.post("/computer", authenticate, GamesControllerImpl.createComputerGame);
 gamesRouter.post("/", authenticate, GamesControllerImpl.createGame);
 gamesRouter.get("/history", authenticate, GamesControllerImpl.getHistory);
 gamesRouter.get("/:gameId", authenticate, GamesControllerImpl.getGame);
